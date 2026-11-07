@@ -16,6 +16,14 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
     return;
   }
 
+  // Next 16 loads additional server modules dynamically (including the console
+  // file logger); NFT tracing can omit them on Windows. Ship the package's
+  // server runtime rather than producing a build that cannot start.
+  const nextPackage = resolve(projectRoot, 'node_modules', 'next');
+  if (existsSync(nextPackage)) {
+    cpSync(nextPackage, resolve(standaloneDir, 'node_modules', 'next'), { recursive: true, force: true });
+  }
+
   const staticSource = resolve(buildDir, "static");
   const staticDestination = resolve(standaloneDir, distDir, "static");
   if (existsSync(staticSource)) {
@@ -43,9 +51,9 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
   if (existsSync(standaloneServer)) {
     try {
       let serverCode = readFileSync(standaloneServer, "utf8");
-      // Strip any previous hook cleanly
-      serverCode = serverCode.replace(/^if \(typeof globalThis !== "undefined"\) \{[\s\S]*?\}\n/, "");
       const hook = `if (typeof globalThis !== "undefined") {\n  globalThis.__xrouter_native_require__ = require;\n  globalThis.__non_webpack_require__ = require;\n  try { globalThis.__xrouter_wreq__ = require("wreq-js"); } catch {}\n}\n`;
+      // Remove the complete known prefix, not the first nested closing brace.
+      while (serverCode.startsWith(hook)) serverCode = serverCode.slice(hook.length);
       writeFileSync(standaloneServer, hook + serverCode, "utf8");
       console.log(`[standalone-assets] Injected native require hook into ${standaloneServer}`);
     } catch {}
